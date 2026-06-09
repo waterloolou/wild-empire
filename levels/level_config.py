@@ -29,7 +29,7 @@ LEVEL_CONFIGS = {
         "enemies": {
             "korrith_trooper": {
                 "display_name": "Korrith Trooper",
-                "health": 40, "damage": 8, "speed": 2.2,
+                "health": 40, "damage": 6, "speed": 2.2,
                 "detection_range": 220, "attack_range": 35,
                 "score_value": 1, "drop_chance": 0.15,
                 "ai_type": "patrol",
@@ -39,7 +39,7 @@ LEVEL_CONFIGS = {
             },
             "korrith_commander": {
                 "display_name": "Korrith Commander",
-                "health": 90, "damage": 18, "speed": 1.8,
+                "health": 90, "damage": 11, "speed": 1.8,
                 "detection_range": 280, "attack_range": 45,
                 "score_value": 1, "drop_chance": 0.40,
                 "ai_type": "chase",
@@ -50,7 +50,7 @@ LEVEL_CONFIGS = {
             "korrith_crawler": {
                 "display_name": "Korrith Siege Crawler",
                 "health": 200, "damage": 35, "speed": 0.9,
-                "detection_range": 350, "attack_range": 200,
+                "detection_range": 420, "attack_range": 290,
                 "score_value": 1, "drop_chance": 0.60,
                 "ai_type": "patrol",
                 "sprite": "assets/sprites/l1_tank.png",
@@ -61,7 +61,7 @@ LEVEL_CONFIGS = {
         "civilians": {
             "enslaved_worker": {
                 "display_name": "Enslaved Worker",
-                "health": 20, "speed": 1.2,
+                "health": 90, "speed": 1.2,
                 "sprite": _CIV_SPRITE, "hitbox": (24, 40),
                 "color_placeholder": _CIV_COLOR,
             },
@@ -100,7 +100,7 @@ LEVEL_CONFIGS = {
         "enemies": {
             "vael_soldier": {
                 "display_name": "Vael Soldier",
-                "health": 50, "damage": 10, "speed": 2.0,
+                "health": 50, "damage": 7, "speed": 2.0,
                 "detection_range": 240, "attack_range": 40,
                 "score_value": 1, "drop_chance": 0.15,
                 "ai_type": "patrol",
@@ -110,7 +110,7 @@ LEVEL_CONFIGS = {
             },
             "vael_hunter": {
                 "display_name": "Vael Hunter",
-                "health": 120, "damage": 22, "speed": 1.6,
+                "health": 120, "damage": 12, "speed": 1.6,
                 "detection_range": 300, "attack_range": 55,
                 "score_value": 1, "drop_chance": 0.45,
                 "ai_type": "chase",
@@ -120,8 +120,8 @@ LEVEL_CONFIGS = {
             },
             "vael_interceptor": {
                 "display_name": "Vael Interceptor",
-                "health": 60, "damage": 25, "speed": 3.5,
-                "detection_range": 400, "attack_range": 300,
+                "health": 60, "damage": 9, "speed": 3.5,
+                "detection_range": 600, "attack_range": 300,
                 "score_value": 1, "drop_chance": 0.30,
                 "ai_type": "sniper", "flies": True,
                 "sprite": "assets/sprites/l2_condor_drone.png",
@@ -132,7 +132,7 @@ LEVEL_CONFIGS = {
         "civilians": {
             "captive_worker": {
                 "display_name": "Captive Worker",
-                "health": 20, "speed": 1.3,
+                "health": 90, "speed": 1.3,
                 "sprite": _CIV_SPRITE, "hitbox": (24, 40),
                 "color_placeholder": _CIV_COLOR,
             },
@@ -173,9 +173,9 @@ LEVEL_CONFIGS = {
         "enemies": {
             "glorbax_drone": {
                 "display_name": "Glorbax Drone",
-                "health": 70, "damage": 12, "speed": 1.2,
+                "health": 70, "damage": 8, "speed": 1.2,
                 "detection_range": 180, "attack_range": 50,
-                "score_value": 1, "drop_chance": 0.20,
+                "score_value": 1, "drop_chance": 0.45,
                 "ai_type": "patrol",
                 "sprite": "assets/sprites/l3_orange_blob.png",
                 "hitbox": (52, 52), "color_placeholder": (255, 120, 0),
@@ -183,9 +183,9 @@ LEVEL_CONFIGS = {
             },
             "glorbax_stalker": {
                 "display_name": "Glorbax Stalker",
-                "health": 55, "damage": 20, "speed": 3.0,
+                "health": 55, "damage": 10, "speed": 3.0,
                 "detection_range": 320, "attack_range": 60,
-                "score_value": 1, "drop_chance": 0.25,
+                "score_value": 1, "drop_chance": 0.55,
                 "ai_type": "chase",
                 "sprite": "assets/sprites/l3_fire_agent.png",
                 "hitbox": (26, 44), "color_placeholder": (200, 30, 0),
@@ -205,7 +205,7 @@ LEVEL_CONFIGS = {
         "civilians": {
             "detained_worker": {
                 "display_name": "Detained Worker",
-                "health": 15, "speed": 1.0,
+                "health": 90, "speed": 1.0,
                 "sprite": _CIV_SPRITE, "hitbox": (24, 40),
                 "color_placeholder": _CIV_COLOR,
             },
@@ -244,7 +244,7 @@ LEVEL_CONFIGS = {
         "enemies": {
             "nexar_grunt": {
                 "display_name": "Nexar Grunt",
-                "health": 60, "damage": 14, "speed": 2.4,
+                "health": 60, "damage": 8, "speed": 2.4,
                 "detection_range": 260, "attack_range": 45,
                 "score_value": 1, "drop_chance": 0.15,
                 "ai_type": "patrol",
@@ -255,7 +255,7 @@ LEVEL_CONFIGS = {
             "nexar_warframe": {
                 "display_name": "Nexar Warframe",
                 "health": 150, "damage": 30, "speed": 2.8,
-                "detection_range": 280, "attack_range": 60,
+                "detection_range": 380, "attack_range": 220,
                 "score_value": 1, "drop_chance": 0.50,
                 "ai_type": "chase", "can_jump": False,
                 "sprite": "assets/sprites/l4_mech_samurai.png",
@@ -277,7 +277,7 @@ LEVEL_CONFIGS = {
         "civilians": {
             "subjugated_worker": {
                 "display_name": "Subjugated Worker",
-                "health": 20, "speed": 1.1,
+                "health": 90, "speed": 1.1,
                 "sprite": _CIV_SPRITE, "hitbox": (24, 40),
                 "color_placeholder": _CIV_COLOR,
             },
@@ -317,7 +317,7 @@ LEVEL_CONFIGS = {
         "enemies": {
             "spider_grunt": {
                 "display_name": "Spider Grunt",
-                "health": 55, "damage": 12, "speed": 2.8,
+                "health": 55, "damage": 7, "speed": 2.8,
                 "detection_range": 220, "attack_range": 35,
                 "score_value": 1, "drop_chance": 0.10,
                 "ai_type": "swarm", "wall_climb": True,
@@ -327,7 +327,7 @@ LEVEL_CONFIGS = {
             },
             "spider_commander": {
                 "display_name": "Spider Commander",
-                "health": 180, "damage": 28, "speed": 2.0,
+                "health": 180, "damage": 14, "speed": 2.0,
                 "detection_range": 360, "attack_range": 70,
                 "score_value": 1, "drop_chance": 0.55,
                 "ai_type": "chase", "wall_climb": True,
@@ -338,8 +338,8 @@ LEVEL_CONFIGS = {
             },
             "web_turret": {
                 "display_name": "Web Turret",
-                "health": 100, "damage": 18, "speed": 0,
-                "detection_range": 400, "attack_range": 400,
+                "health": 100, "damage": 10, "speed": 0,
+                "detection_range": 600, "attack_range": 400,
                 "score_value": 1, "drop_chance": 0.30,
                 "ai_type": "sniper", "is_stationary": True,
                 "fires_web": True, "can_jump": False,
@@ -363,7 +363,7 @@ LEVEL_CONFIGS = {
         "civilians": {
             "imprisoned_worker": {
                 "display_name": "Imprisoned Worker",
-                "health": 15, "speed": 0.8,
+                "health": 90, "speed": 0.8,
                 "sprite": _CIV_SPRITE, "hitbox": (24, 40),
                 "color_placeholder": _CIV_COLOR,
             },
@@ -411,8 +411,8 @@ LEVEL_CONFIGS = {
             },
             "zarak_drone": {
                 "display_name": "Zarak Broadcast Drone",
-                "health": 40, "damage": 5, "speed": 3.0,
-                "detection_range": 500, "attack_range": 400,
+                "health": 40, "damage": 8, "speed": 3.0,
+                "detection_range": 600, "attack_range": 400,
                 "score_value": 1, "drop_chance": 0.10,
                 "ai_type": "sniper", "flies": True, "stuns_on_hit": True,
                 "sprite": "assets/sprites/ls_prop_drone.png",
@@ -423,7 +423,7 @@ LEVEL_CONFIGS = {
         "civilians": {
             "displaced_worker": {
                 "display_name": "Displaced Worker",
-                "health": 15, "speed": 1.0,
+                "health": 90, "speed": 1.0,
                 "sprite": _CIV_SPRITE, "hitbox": (24, 40),
                 "color_placeholder": _CIV_COLOR,
             },

@@ -38,6 +38,8 @@ class Entity:
         self.facingRight = True
         self.sprite = None          # set by subclass
         self.spriteMirror = None    # cached flipped version
+        self._prevBottom = y + height
+        self._hurtFlash  = 0        # frames of red tint on damage
 
     def applyGravity(self, gravity, terminalVel):
         if not self.onGround:
@@ -45,6 +47,7 @@ class Entity:
 
     def move(self, platforms):
         """Move with gravity + platform collision."""
+        self._prevBottom = self.rect.bottom
         self.rect.x += int(self.velX)
         self._resolveHorizontal(platforms)
         self.rect.y += int(self.velY)
@@ -52,7 +55,7 @@ class Entity:
 
     def _resolveHorizontal(self, platforms):
         for plat in platforms:
-            if self.rect.colliderect(plat):
+            if self.rect.colliderect(plat) and self._prevBottom <= plat.top:
                 if self.velX > 0:
                     self.rect.right = plat.left
                 elif self.velX < 0:
@@ -62,13 +65,13 @@ class Entity:
     def _resolveVertical(self, platforms):
         self.onGround = False
         for plat in platforms:
-            if self.rect.colliderect(plat):
-                if self.velY > 0:
+            if self.rect.colliderect(plat) and self.velY >= 0:
+                # Only land if the entity was at or above the platform top last frame.
+                # This prevents corner-teleports when jumping up alongside a platform.
+                if self._prevBottom <= plat.top:
                     self.rect.bottom = plat.top
                     self.onGround = True
-                elif self.velY < 0:
-                    self.rect.top = plat.bottom
-                self.velY = 0
+                    self.velY = 0
 
     def draw(self, surface, camOffset):
         drawX = self.rect.x - camOffset[0]
@@ -77,9 +80,15 @@ class Entity:
             img = self.sprite if self.facingRight else self.spriteMirror
             surface.blit(img, (drawX, drawY))
         else:
-            # Raw fallback rectangle
             pygame.draw.rect(surface, (200, 50, 200),
                              (drawX, drawY, self.rect.width, self.rect.height))
+        # Hurt flash — red tint overlay
+        if self._hurtFlash > 0:
+            self._hurtFlash -= 1
+            alpha = int(180 * self._hurtFlash / 8)
+            hs = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
+            hs.fill((255, 40, 40, alpha))
+            surface.blit(hs, (drawX, drawY))
 
     def setSprite(self, path, fallbackColor):
         size = (self.rect.width, self.rect.height)
@@ -106,31 +115,62 @@ class Player(Entity):
     MAX_HEALTH     = 100
     MOVE_SPEED     = 3.8
     JUMP_FORCE     = -12.0
-    SHOOT_COOLDOWN = 2000   # 2 s between shots
-    RELOAD_TIME    = 1500
-    MAX_AMMO       = 30
     MELEE_COOLDOWN = 700
     MELEE_DAMAGE   = 20
     MELEE_RANGE    = 58
+    SKILL_SHIELD_COOLDOWN = 5000
+
+    GUN_STATS = {
+        "regular": {"cooldown": 700,  "max_ammo": 30, "reload": 2500,
+                    "ammo_cost": 1,   "damage": 20,   "bullets": 1,
+                    "spread": 0.0,    "knockback": 0, "label": "GUN"},
+        "shotgun": {"cooldown": 1400, "max_ammo": 30, "reload": 3000,
+                    "ammo_cost": 3,   "damage": 8,    "bullets": 5,
+                    "spread": 0.30,   "knockback": 5, "label": "SHOTGUN"},
+        "rpg":     {"cooldown": 0,    "max_ammo": 1,  "reload": 10000,
+                    "ammo_cost": 1,   "damage": 80,   "bullets": 1,
+                    "spread": 0.0,    "knockback": 0, "label": "RPG",
+                    "explodes": True, "explode_radius": 100},
+    }
 
     def __init__(self, x, y):
         super().__init__(x, y, 28, 44)
         self.health = self.MAX_HEALTH
-        self.ammo = self.MAX_AMMO
         self.score = 0
         self.civilianDeaths = 0
         self.reloading = False
         self.shieldActive = False
         self.shieldTimer = 0
+        self.shieldDuration = 0
         self.webbed = False
         self.webbedTimer = 0
         self._shootTimer = 0
         self._reloadTimer = 0
         self._meleeTimer  = 0
-        self._meleeFlash  = 0   # frames remaining for melee visual
+        self._meleeFlash  = 0
+        self._shootFlash  = 0   # frames of muzzle flash
 
-        # ── SPRITE: swap in your art file ──────────────────
+        # Gun system — set via setGunType() before play
+        self.gunType = "regular"
+        stats = self.GUN_STATS["regular"]
+        self.MAX_AMMO    = stats["max_ammo"]
+        self.SHOOT_COOLDOWN = stats["cooldown"]
+        self.RELOAD_TIME = stats["reload"]
+        self.ammo        = self.MAX_AMMO
+
+        # Skill shield (Q key) — separate from pickup shield
+        self._skillShield = False
+        self._skillShieldCooldownEnd = -self.SKILL_SHIELD_COOLDOWN  # ready at start
+
         self.setSprite(self.SPRITE_PATH, self.SPRITE_FALLBACK)
+
+    def setGunType(self, gtype):
+        self.gunType = gtype
+        stats = self.GUN_STATS[gtype]
+        self.MAX_AMMO       = stats["max_ammo"]
+        self.SHOOT_COOLDOWN = stats["cooldown"]
+        self.RELOAD_TIME    = stats["reload"]
+        self.ammo           = self.MAX_AMMO
 
     # -------------------------------------------------------
     def handleInput(self, keys, mouseButtons, friction):
@@ -148,26 +188,46 @@ class Player(Entity):
         if (keys[pygame.K_w] or keys[pygame.K_SPACE] or keys[pygame.K_UP]) and self.onGround:
             self.velY = self.JUMP_FORCE
 
-    def tryShoot(self, now, bullets, mousePos, camOffset):
-        """Call each frame; returns True if shot was fired."""
-        if self.ammo <= 0 or self.reloading:
+    def activateSkillShield(self, now):
+        if not self._skillShield and now >= self._skillShieldCooldownEnd:
+            self._skillShield = True
+
+    def tryShoot(self, now, bullets):
+        """Call each frame; returns True if a shot was fired."""
+        stats = self.GUN_STATS[self.gunType]
+        cost = stats["ammo_cost"]
+        if self.ammo < cost or self.reloading:
             return False
-        if now - self._shootTimer < self.SHOOT_COOLDOWN:
+        if now - self._shootTimer < stats["cooldown"]:
             return False
-        # Direction to mouse
-        worldMX = mousePos[0] + camOffset[0]
-        worldMY = mousePos[1] + camOffset[1]
-        cx = self.rect.centerx
-        cy = self.rect.centery
-        dx = worldMX - cx
-        dy = worldMY - cy
-        dist = max(1, (dx**2 + dy**2) ** 0.5)
+
         speed = 14
-        b = Bullet(cx, cy, dx / dist * speed, dy / dist * speed,
-                   damage=20, owner="player", color=(255, 255, 80))
-        bullets.append(b)
-        self.ammo -= 1
+        cx, cy = self.rect.centerx, self.rect.centery
+        base_vx = speed if self.facingRight else -speed
+
+        for i in range(stats["bullets"]):
+            spread = stats["spread"]
+            angle = 0.0
+            if spread > 0:
+                # Distribute spread evenly across bullet count
+                half = (stats["bullets"] - 1) / 2.0
+                angle = (i - half) * spread / max(1, stats["bullets"] - 1)
+            vx = base_vx * math.cos(angle) - 0 * math.sin(angle)
+            vy = abs(base_vx) * math.sin(angle)
+            explodes = stats.get("explodes", False)
+            er = stats.get("explode_radius", 0)
+            bullets.append(Bullet(cx, cy, vx, vy,
+                                  damage=stats["damage"], owner="player",
+                                  color=(255, 255, 80),
+                                  explodes=explodes, explode_radius=er))
+
+        # Shotgun knockback
+        if stats["knockback"] > 0:
+            self.velX += (-stats["knockback"]) if self.facingRight else stats["knockback"]
+
+        self.ammo -= cost
         self._shootTimer = now
+        self._shootFlash = 4
         return True
 
     def startReload(self):
@@ -185,9 +245,13 @@ class Player(Entity):
             self.shieldActive = False
 
     def takeDamage(self, amount):
-        if self.shieldActive:
+        if self.shieldActive or self._skillShield:
+            if self._skillShield:
+                self._skillShield = False
+                self._skillShieldCooldownEnd = pygame.time.get_ticks() + self.SKILL_SHIELD_COOLDOWN
             return
         self.health = max(0, self.health - amount)
+        self._hurtFlash = 8
         if self.health <= 0:
             self.alive = False
 
@@ -196,13 +260,14 @@ class Player(Entity):
             return False
         self._meleeTimer = now
         self._meleeFlash = 8
-        # Hitbox extends in front of the player
+        # Hitbox: covers the player's own body + MELEE_RANGE in front, slightly taller.
+        # This catches enemies that are standing on/overlapping the player.
         if self.facingRight:
-            hbox = pygame.Rect(self.rect.right, self.rect.top,
-                               self.MELEE_RANGE, self.rect.height)
+            hbox = pygame.Rect(self.rect.left, self.rect.top - 8,
+                               self.rect.width + self.MELEE_RANGE, self.rect.height + 16)
         else:
-            hbox = pygame.Rect(self.rect.left - self.MELEE_RANGE, self.rect.top,
-                               self.MELEE_RANGE, self.rect.height)
+            hbox = pygame.Rect(self.rect.left - self.MELEE_RANGE, self.rect.top - 8,
+                               self.rect.width + self.MELEE_RANGE, self.rect.height + 16)
         for e in enemies:
             if e.alive and hbox.colliderect(e.rect):
                 e.takeDamage(self.MELEE_DAMAGE)
@@ -224,19 +289,34 @@ class Player(Entity):
         super().draw(surface, camOffset)
         drawX = self.rect.x - camOffset[0]
         drawY = self.rect.y - camOffset[1]
-        # Shield glow
+        # Pickup shield glow (blue)
         if self.shieldActive:
             s = pygame.Surface((self.rect.width + 12, self.rect.height + 12), pygame.SRCALPHA)
-            pygame.draw.ellipse(s, (80, 160, 255, 80), s.get_rect())
+            pygame.draw.ellipse(s, (80, 160, 255, 90), s.get_rect())
             surface.blit(s, (drawX - 6, drawY - 6))
-        # Melee flash
+        # Skill shield glow (gold)
+        if self._skillShield:
+            s = pygame.Surface((self.rect.width + 16, self.rect.height + 16), pygame.SRCALPHA)
+            pygame.draw.ellipse(s, (255, 210, 0, 110), s.get_rect())
+            surface.blit(s, (drawX - 8, drawY - 8))
+        # Shoot flash — muzzle burst
+        if self._shootFlash > 0:
+            self._shootFlash -= 1
+            alpha = int(220 * self._shootFlash / 4)
+            mx = drawX + self.rect.width if self.facingRight else drawX - 10
+            my = drawY + self.rect.height // 2 - 5
+            fs = pygame.Surface((18, 18), pygame.SRCALPHA)
+            pygame.draw.circle(fs, (255, 240, 80, alpha), (9, 9), 9)
+            surface.blit(fs, (mx - 4, my - 4))
+        # Melee flash — matches the full hitbox (body + range in front)
         if self._meleeFlash > 0:
             self._meleeFlash -= 1
             alpha = int(200 * self._meleeFlash / 8)
-            fx = drawX + (self.rect.width if self.facingRight else -self.MELEE_RANGE)
-            ms = pygame.Surface((self.MELEE_RANGE, self.rect.height), pygame.SRCALPHA)
+            fw = self.rect.width + self.MELEE_RANGE
+            fx = drawX if self.facingRight else drawX - self.MELEE_RANGE
+            ms = pygame.Surface((fw, self.rect.height + 16), pygame.SRCALPHA)
             ms.fill((255, 220, 60, alpha))
-            surface.blit(ms, (fx, drawY))
+            surface.blit(ms, (fx, drawY - 8))
 
 
 # ============================================================
@@ -267,8 +347,12 @@ class Enemy(Entity):
         self._patrolDir = 1
         self._patrolTimer = 0
         self._attackTimer = 0
+        self._shootTimer  = 0
         self._jumpTimer   = 0
-        self._platforms   = []   # cached each frame for sub-methods
+        self._gravity     = 0.5
+        self._platforms   = []
+        self._shootFlash  = 0   # muzzle flash frames
+        self._attackFlash = 0   # melee flash frames
 
         # ── SPRITE: swap in your art ────────────────────────
         self.setSprite(cfg["sprite"], cfg["color_placeholder"])
@@ -276,6 +360,7 @@ class Enemy(Entity):
     # -------------------------------------------------------
     def update(self, player, now, gravity, terminalVel, platforms, bullets, allies=None):
         self._platforms = platforms
+        self._gravity   = gravity
         target = self._pickTarget(player, allies or [])
         dist   = self._distTo(target)
 
@@ -294,10 +379,12 @@ class Enemy(Entity):
             self.applyGravity(gravity, terminalVel)
         self.move(platforms)
 
-        # Melee attack on nearest target
+        # Melee attack on nearest target (long-range attacks require LOS)
         if dist <= self.attackRange and now - self._attackTimer > 1000:
-            target.takeDamage(self.damage)
-            self._attackTimer = now
+            if self.attackRange <= 70 or self._hasLOS(target):
+                target.takeDamage(self.damage)
+                self._attackTimer = now
+                self._attackFlash = 5
 
     def _pickTarget(self, player, allies):
         candidates = [player] + [a for a in allies if a.alive]
@@ -318,19 +405,40 @@ class Enemy(Entity):
     def _tryJump(self, target, now):
         if not self.canJump:
             return
-        if not self.onGround or now - self._jumpTimer < 300:
+        if not self.onGround or now - self._jumpTimer < 1500:
             return
-        if not target.onGround:
-            return  # don't mirror player's jump
-        if target.rect.centery >= self.rect.centery - 50:
+        if target.rect.centery >= self.rect.centery - 40:
             return  # target not above us
-        if self._platformInJumpRange():
-            self.velY = -12.0
-            self._jumpTimer = now
+
+        g          = max(0.15, self._gravity)
+        jump_force = 12.0
+        frames_air = (2.0 * jump_force) / g
+        max_h      = (jump_force * jump_force) / (2.0 * g)
+        # Cap to one platform tier (102 px gap) so low-gravity levels don't skip tiers.
+        vert_max   = min(max_h, 120.0)
+
+        # Use the velX that patrol/chase already set this frame — it's the actual
+        # horizontal speed we'll have during the jump.
+        vx = self.velX
+        if abs(vx) < 0.1:
+            vx = self.speed if target.rect.centerx > self.rect.centerx else -self.speed
+
+        land_x = self.rect.centerx + vx * frames_air
+        feet   = self.rect.bottom
+
+        for plat in self._platforms:
+            vert = feet - plat.top
+            if not (8 <= vert <= vert_max):
+                continue
+            # Landing point must sit comfortably inside the platform, not just near the edge.
+            if plat.left + 10 <= land_x <= plat.right - 10:
+                self.velY = -jump_force
+                self._jumpTimer = now
+                return
 
     def _rangedFallback(self, target, now, bullets):
         """Lob a shot upward when the target is on a higher platform and can't be reached by melee."""
-        if now - self._attackTimer < 2500:
+        if now - self._shootTimer < 3500:
             return
         dy = target.rect.centery - self.rect.centery
         if dy > -90:     # target not meaningfully above
@@ -342,19 +450,10 @@ class Enemy(Entity):
         bullets.append(Bullet(self.rect.centerx, self.rect.centery,
                               dx / dist * 7, dy / dist * 7,
                               damage=max(5, self.damage // 3),
-                              owner="enemy", color=(255, 140, 60)))
-        self._attackTimer = now
-
-    def _platformInJumpRange(self):
-        """True if there's a platform above that a single jump can reach."""
-        MAX_H = 110   # conservative max jump height in pixels
-        feet = self.rect.bottom
-        for plat in self._platforms:
-            vert = feet - plat.top
-            if 15 <= vert <= MAX_H:
-                if plat.right > self.rect.left - 60 and plat.left < self.rect.right + 60:
-                    return True
-        return False
+                              owner="enemy", color=(255, 140, 60),
+                              max_range=380))
+        self._shootTimer = now
+        self._shootFlash = 4
 
     def _patrol(self, target, now):
         """Always move toward the target — slow when far, full speed when close."""
@@ -380,7 +479,7 @@ class Enemy(Entity):
         return True
 
     def _snipe(self, target, now, bullets):
-        if now - self._attackTimer < 2000:
+        if now - self._shootTimer < 3000:
             return
         if not self._hasLOS(target):
             return                          # wall in the way — wait for clear shot
@@ -389,12 +488,15 @@ class Enemy(Entity):
         dist = max(1, (dx**2 + dy**2) ** 0.5)
         b = Bullet(self.rect.centerx, self.rect.centery,
                    dx / dist * 10, dy / dist * 10,
-                   damage=self.damage, owner="enemy", color=(255, 60, 60))
+                   damage=self.damage, owner="enemy", color=(255, 60, 60),
+                   max_range=900)
         bullets.append(b)
-        self._attackTimer = now
+        self._shootTimer = now
+        self._shootFlash = 4
 
     def takeDamage(self, amount):
         self.health -= amount
+        self._hurtFlash = 8
         if self.health <= 0:
             self.alive = False
             return True
@@ -402,14 +504,30 @@ class Enemy(Entity):
 
     def draw(self, surface, camOffset):
         super().draw(surface, camOffset)
-        # Health bar
         drawX = self.rect.x - camOffset[0]
         drawY = self.rect.y - camOffset[1]
+        # Health bar
         barW = self.rect.width
         barH = 5
         pct = max(0, self.health / self.maxHealth)
         pygame.draw.rect(surface, (180, 0, 0), (drawX, drawY - 8, barW, barH))
         pygame.draw.rect(surface, (0, 220, 0), (drawX, drawY - 8, int(barW * pct), barH))
+        # Shoot flash — yellow muzzle burst
+        if self._shootFlash > 0:
+            self._shootFlash -= 1
+            alpha = int(220 * self._shootFlash / 4)
+            mx = drawX + self.rect.width if self.facingRight else drawX - 12
+            my = drawY + self.rect.height // 2
+            fs = pygame.Surface((16, 16), pygame.SRCALPHA)
+            pygame.draw.circle(fs, (255, 230, 60, alpha), (8, 8), 8)
+            surface.blit(fs, (mx - 4, my - 8))
+        # Attack flash — orange burst on melee
+        if self._attackFlash > 0:
+            self._attackFlash -= 1
+            alpha = int(180 * self._attackFlash / 5)
+            af = pygame.Surface((self.rect.width + 16, self.rect.height), pygame.SRCALPHA)
+            af.fill((255, 100, 0, alpha))
+            surface.blit(af, (drawX - 8, drawY))
 
 
 # ============================================================
@@ -511,6 +629,7 @@ class Civilian(Entity):
 
     def takeDamage(self, amount):
         self.health -= amount
+        self._hurtFlash = 8
         if self.health <= 0:
             self.alive = False
 
@@ -556,19 +675,32 @@ class Civilian(Entity):
 class Bullet:
     RADIUS = 5
 
-    def __init__(self, x, y, velX, velY, damage, owner, color=(255, 255, 80)):
+    def __init__(self, x, y, velX, velY, damage, owner, color=(255, 255, 80),
+                 max_range=520, explodes=False, explode_radius=0):
         self.rect = pygame.Rect(x - self.RADIUS, y - self.RADIUS,
                                 self.RADIUS * 2, self.RADIUS * 2)
         self.velX = velX
         self.velY = velY
         self.damage = damage
         self.owner = owner      # "player" | "enemy"
+        self.explodes = explodes
+        self.explode_radius = explode_radius
         self.color = color
         self.alive = True
+        self.max_range = max_range
+        self._dist = 0.0
 
     def update(self, platforms):
         self.rect.x += int(self.velX)
         self.rect.y += int(self.velY)
+        self._dist += (self.velX ** 2 + self.velY ** 2) ** 0.5
+        if self._dist > self.max_range:
+            self.alive = False
+            return
+        # Cull if it leaves the world entirely
+        if self.rect.y < -120 or self.rect.y > 820 or self.rect.x < -120 or self.rect.x > 4120:
+            self.alive = False
+            return
         for plat in platforms:
             if self.rect.colliderect(plat):
                 self.alive = False
@@ -585,7 +717,7 @@ class Bullet:
 # PICKUP
 # ============================================================
 class Pickup:
-    SIZE = 20
+    SIZE = 36
 
     def __init__(self, x, y, ptype, pdata):
         self.rect = pygame.Rect(x, y, self.SIZE, self.SIZE)

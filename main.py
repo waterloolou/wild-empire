@@ -191,8 +191,10 @@ class HUD:
         pygame.draw.rect(self.screen, (220, 40, 40),   (20, 20, int(200 * pct), 18))
         self._label(f"HP {player.health}/{player.MAX_HEALTH}", 20, 40, self.fontSm, WHITE)
 
-        # ── Ammo ───────────────────────────────────────────
-        ammoTxt = "RELOADING..." if player.reloading else f"AMMO {player.ammo}/{player.MAX_AMMO}"
+        # ── Ammo + gun label ───────────────────────────────
+        from entities.entities import Player as _P
+        gun_label = _P.GUN_STATS[player.gunType]["label"]
+        ammoTxt = f"RELOADING..." if player.reloading else f"{gun_label}  {player.ammo}/{player.MAX_AMMO}"
         self._label(ammoTxt, 20, 58, self.fontSm, YELLOW)
 
         # ── Score (top center) ─────────────────────────────
@@ -212,9 +214,16 @@ class HUD:
         self._label(f"WORKERS  {rescuedCivs}/{totalCivs} rescued  |  {deadCivs} dead",
                     sw - 20, 40, self.fontSm, civCol, right=True)
 
-        # ── Shield indicator ───────────────────────────────
+        # ── Shield indicators ──────────────────────────────
         if player.shieldActive:
             self._label("[ SHIELD ACTIVE ]", sw // 2, 70, self.fontSm, (100, 180, 255), center=True)
+        if player._skillShield:
+            self._label("[ SKILL SHIELD ]  Q", sw // 2, 88, self.fontSm, (255, 210, 0), center=True)
+        elif player._skillShieldCooldownEnd > pygame.time.get_ticks():
+            remaining = max(0, (player._skillShieldCooldownEnd - pygame.time.get_ticks()) // 1000 + 1)
+            self._label(f"[ SHIELD CDN {remaining}s ]  Q", sw // 2, 88, self.fontSm, (160, 130, 40), center=True)
+        else:
+            self._label("[ Q: SHIELD ]", sw // 2, 88, self.fontSm, (80, 140, 80), center=True)
 
         # ── Webbed indicator ───────────────────────────────
         if player.webbed:
@@ -450,11 +459,12 @@ def drawTitleScreen(screen, font, smallFont):
     screen.blit(sub,   (w//2 - sub.get_width()//2,   280))
     screen.blit(start, (w//2 - start.get_width()//2, 420))
 
-    # Controls
     controls = [
         "A/D  or  ←/→ : Move",
         "W / SPACE / ↑ : Jump",
-        "Left Click     : Shoot",
+        "G              : Shoot",
+        "F              : Melee",
+        "Q              : Skill Shield",
         "R              : Reload",
         "E              : Rescue civilian",
     ]
@@ -463,6 +473,76 @@ def drawTitleScreen(screen, font, smallFont):
         s = smallFont.render(line, True, (120, 180, 120))
         screen.blit(s, (w//2 - s.get_width()//2, y))
         y += 22
+
+
+def drawGunSelect(screen, font, smallFont, selectedIdx):
+    screen.fill(DARK)
+    title = font.render("CHOOSE YOUR WEAPON", True, (255, 220, 0))
+    screen.blit(title, (SCREEN_W//2 - title.get_width()//2, 120))
+    sub = smallFont.render("← / → to navigate   |   ENTER to confirm", True, GRAY)
+    screen.blit(sub, (SCREEN_W//2 - sub.get_width()//2, 172))
+
+    guns = [
+        {
+            "name": "REGULAR GUN",
+            "color": (80, 220, 80),
+            "desc": [
+                "Standard automatic pistol",
+                "Cooldown : 0.7 s",
+                "Ammo     : 30",
+                "Damage   : 20",
+                "Spread   : none",
+            ],
+        },
+        {
+            "name": "SHOTGUN",
+            "color": (255, 160, 40),
+            "desc": [
+                "5-pellet spray — knocks you back",
+                "Cooldown : 1.4 s",
+                "Ammo     : 30  (costs 3/shot)",
+                "Damage   : 8 per pellet",
+                "Spread   : wide",
+            ],
+        },
+        {
+            "name": "RPG",
+            "color": (255, 60, 60),
+            "desc": [
+                "Single explosive rocket",
+                "Cooldown : 10 s reload",
+                "Ammo     : 1  (reload after each)",
+                "Damage   : 80 + 160 AOE",
+                "Spread   : none  |  radius 100",
+            ],
+        },
+    ]
+
+    card_w, card_h = 330, 220
+    gap = 30
+    total_w = 3 * card_w + 2 * gap
+    start_x = (SCREEN_W - total_w) // 2
+    card_y = 220
+
+    for i, g in enumerate(guns):
+        cx = start_x + i * (card_w + gap)
+        selected = (i == selectedIdx)
+        border_col = g["color"] if selected else (60, 60, 60)
+        bg_col = (30, 30, 30) if not selected else (20, 35, 20)
+        pygame.draw.rect(screen, bg_col,    (cx, card_y, card_w, card_h), border_radius=8)
+        pygame.draw.rect(screen, border_col,(cx, card_y, card_w, card_h), 3, border_radius=8)
+
+        name_col = g["color"] if selected else (180, 180, 180)
+        n = font.render(g["name"], True, name_col)
+        screen.blit(n, (cx + card_w//2 - n.get_width()//2, card_y + 12))
+
+        if selected:
+            arrow = font.render("▼", True, g["color"])
+            screen.blit(arrow, (cx + card_w//2 - arrow.get_width()//2, card_y - 36))
+
+        for j, line in enumerate(g["desc"]):
+            s = smallFont.render(line, True, (200, 200, 200) if selected else (120, 120, 120))
+            screen.blit(s, (cx + 14, card_y + 62 + j * 26))
 
 
 def drawPauseOverlay(screen, font, smallFont):
@@ -591,10 +671,15 @@ class Game:
         self.fontLg  = pygame.font.SysFont("monospace", 36, bold=True)
         self.fontSm  = pygame.font.SysFont("monospace", 18)
         self.hud     = HUD(self.screen)
-        self.state   = "title"      # title | playing | paused | level_complete | game_over
+        self.state   = "title"
         self.levelIdx = 0
         self.totalScore = 0
         self.secretUnlocked = False
+        self._carryoverAllies = []
+        self.selectedGun      = "regular"   # chosen in gun-select menu
+        self._gunSelectIdx    = 0           # 0=regular 1=shotgun 2=rpg
+        self._pendingGunSelect = "new_game" # what happens after gun select
+        self._levelHasBoss    = False
 
         # Per-level state (set in loadLevel)
         self.player    = None
@@ -623,8 +708,21 @@ class Game:
     def loadLevel(self, levelId):
         self.cfg = LEVEL_CONFIGS[levelId]
         self.platforms = buildPlatforms(levelId)
-        self.player    = Player(100, 600)
+
+        # Spawn player on a safe platform (not in lava)
+        if self.cfg.get("lava_floor"):
+            elevated = [p for p in self.platforms if p.top < 660]
+            plat = elevated[0] if elevated else None
+            if plat:
+                self.player = Player(plat.left + 20, plat.top - 44)
+            else:
+                self.player = Player(100, 400)
+        else:
+            self.player = Player(100, 600)
+        self.player.setGunType(self.selectedGun)
+
         self.enemies   = spawnEnemies(self.cfg, self.platforms)
+        self._levelHasBoss = any(e.isBoss for e in self.enemies)
         civs, guards   = spawnCivilians(self.cfg, self.platforms)
         self.civilians = civs
         self.enemies  += guards   # guards are tracked as regular enemies
@@ -637,6 +735,25 @@ class Game:
         self.rescuedCount   = 0
         self.civDeathCount  = 0
         self.enemyKillCount = 0
+
+        # Spawn rescued allies carried over from the previous level
+        if self._carryoverAllies:
+            lava     = self.cfg.get("lava_floor", False)
+            elevated = [p for p in self.platforms if p.top < 660]
+            for civ_cfg, hp in self._carryoverAllies:
+                w, h = civ_cfg["hitbox"]
+                if lava and elevated:
+                    plat    = elevated[0]
+                    spawn_x = random.randint(plat.left + 4,
+                                             max(plat.left + 4, plat.right - w - 4))
+                    spawn_y = plat.top - h
+                else:
+                    spawn_x = random.randint(60, 260)
+                    spawn_y = 680 - h
+                ally         = Civilian(spawn_x, spawn_y, civ_cfg)
+                ally.rescued = True
+                ally.health  = min(hp, civ_cfg["health"])
+                self.civilians.append(ally)
 
         # Sounds — stop any loop from the previous level, start lava if needed
         self.sounds.stop_all_loops()
@@ -666,9 +783,12 @@ class Game:
 
     # -------------------------------------------------------
     def checkWinCondition(self):
-        allEnemiesDead = all(not e.alive for e in self.enemies)
-        allCivsSaved   = all(c.rescued for c in self.civilians if c.alive)
-        return allEnemiesDead or allCivsSaved
+        allCivsSaved = all(c.rescued for c in self.civilians if c.alive)
+        if allCivsSaved:
+            return True
+        if self._levelHasBoss and not any(e.alive and e.isBoss for e in self.enemies):
+            return True
+        return False
 
     # -------------------------------------------------------
     def run(self):
@@ -702,27 +822,51 @@ class Game:
 
                 elif event.key == pygame.K_RETURN:
                     if self.state == "title":
-                        self.levelIdx = 0
-                        self.totalScore = 0
-                        self.loadLevel(self.currentLevelId())
+                        self._gunSelectIdx = ["regular","shotgun","rpg"].index(self.selectedGun)
+                        self._pendingGunSelect = "new_game"
+                        self.state = "gun_select"
+                    elif self.state == "gun_select":
+                        self.selectedGun = ["regular","shotgun","rpg"][self._gunSelectIdx]
+                        if self._pendingGunSelect == "new_game":
+                            self.levelIdx = 0
+                            self.totalScore = 0
+                            self._carryoverAllies = []
+                            self.loadLevel(self.currentLevelId())
+                        elif self._pendingGunSelect == "advance_level":
+                            self.loadLevel(self.currentLevelId())
+                        elif self._pendingGunSelect == "retry":
+                            self._carryoverAllies = []
+                            self.loadLevel(self.currentLevelId())
                         self.state = "playing"
                     elif self.state == "level_complete":
                         self.levelIdx += 1
                         if self.levelIdx >= len(LEVEL_ORDER):
                             if self.secretUnlocked:
                                 self.loadLevel("secret")
+                                self.state = "playing"
                             else:
                                 self.state = "title"
-                                return
-                        self.loadLevel(self.currentLevelId())
-                        self.state = "playing"
+                            return
+                        self._gunSelectIdx = ["regular","shotgun","rpg"].index(self.selectedGun)
+                        self._pendingGunSelect = "advance_level"
+                        self.state = "gun_select"
                     elif self.state == "game_over":
-                        self.loadLevel(self.currentLevelId())
-                        self.state = "playing"
+                        self._gunSelectIdx = ["regular","shotgun","rpg"].index(self.selectedGun)
+                        self._pendingGunSelect = "retry"
+                        self.state = "gun_select"
+
+                elif event.key in (pygame.K_LEFT, pygame.K_a) and self.state == "gun_select":
+                    self._gunSelectIdx = (self._gunSelectIdx - 1) % 3
+                elif event.key in (pygame.K_RIGHT, pygame.K_d) and self.state == "gun_select":
+                    self._gunSelectIdx = (self._gunSelectIdx + 1) % 3
 
                 elif event.key == pygame.K_r and self.state == "playing":
                     if self.player:
                         self.player.startReload()
+
+                elif event.key == pygame.K_q and self.state == "playing":
+                    if self.player:
+                        self.player.activateSkillShield(pygame.time.get_ticks())
 
                 elif event.key == pygame.K_e and self.state == "playing":
                     self._tryRescue()
@@ -733,14 +877,6 @@ class Game:
                         if fired:
                             self.sounds.play("melee", vol=0.65)
 
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1 and self.state == "playing":
-                    now = pygame.time.get_ticks()
-                    _bc = len(self.bullets)
-                    self.player.tryShoot(now, self.bullets,
-                                         pygame.mouse.get_pos(), self.camera)
-                    if len(self.bullets) > _bc:
-                        self.sounds.play("shoot", vol=0.42)
 
     def _tryRescue(self):
         if not self.player:
@@ -777,6 +913,25 @@ class Game:
         self.totalScore += SCORING["civilian_death_penalty"]
         print(f"[TRAGEDY] Civilian killed! {SCORING['civilian_death_penalty']} pts")
 
+    def _doExplosion(self, cx, cy, radius, damage):
+        """Deal AOE damage to all enemies (and player) within radius of (cx,cy)."""
+        for e in self.enemies:
+            if not e.alive:
+                continue
+            dx = e.rect.centerx - cx
+            dy = e.rect.centery - cy
+            if (dx*dx + dy*dy) <= radius*radius:
+                killed = e.takeDamage(damage)
+                if killed:
+                    self._onEnemyKilled(e)
+        dx = self.player.rect.centerx - cx
+        dy = self.player.rect.centery - cy
+        if (dx*dx + dy*dy) <= radius*radius:
+            self.player.takeDamage(damage // 4)  # splash self-damage is reduced
+        # Visual crater if on ground level
+        if cy >= 640:
+            self.craters.append(Crater(int(cx), 680, max(20, radius // 2)))
+
     # -------------------------------------------------------
     def update(self):
         if self.state != "playing":
@@ -791,6 +946,11 @@ class Game:
         # ── Player ─────────────────────────────────────────
         keys = pygame.key.get_pressed()
         self.player.handleInput(keys, None, fric)
+        if keys[pygame.K_g]:
+            _bc = len(self.bullets)
+            self.player.tryShoot(now, self.bullets)
+            if len(self.bullets) > _bc:
+                self.sounds.play("shoot", vol=0.42)
         self.player.applyGravity(grav, term)
         self.player.move(self.platforms)
         # Clamp to level bounds so player can't walk/fall off the edges
@@ -825,7 +985,15 @@ class Game:
 
         # ── Bullets ────────────────────────────────────────
         for b in self.bullets:
+            was_alive = b.alive
             b.update(self.platforms)
+
+            # RPG explosion on death
+            if was_alive and not b.alive and b.explodes:
+                self._doExplosion(b.rect.centerx, b.rect.centery,
+                                  b.explode_radius, b.damage * 2)
+                continue
+
             if not b.alive:
                 continue
 
@@ -834,10 +1002,12 @@ class Game:
                     if e.alive and b.rect.colliderect(e.rect):
                         killed = e.takeDamage(b.damage)
                         b.alive = False
+                        if b.explodes:
+                            self._doExplosion(b.rect.centerx, b.rect.centery,
+                                              b.explode_radius, b.damage * 2)
                         if killed:
                             self._onEnemyKilled(e)
                         break
-                # Friendly fire check
                 for c in self.civilians:
                     if c.alive and not c.rescued and b.rect.colliderect(c.rect):
                         c.takeDamage(b.damage)
@@ -922,6 +1092,10 @@ class Game:
             self.totalScore += bonus
             if self.levelIdx == len(LEVEL_ORDER) - 1:
                 self.secretUnlocked = True
+            # Save rescued survivors — they'll carry over to the next level
+            self._carryoverAllies = [
+                (c.cfg, c.health) for c in self.civilians if c.alive and c.rescued
+            ]
             self.sounds.stop_all_loops()
             self.sounds.play("level_complete", vol=0.72)
             self.state = "level_complete"
@@ -1002,6 +1176,8 @@ class Game:
     def render(self):
         if self.state == "title":
             drawTitleScreen(self.screen, self.fontLg, self.fontSm)
+        elif self.state == "gun_select":
+            drawGunSelect(self.screen, self.fontLg, self.fontSm, self._gunSelectIdx)
         elif self.state in ("playing", "paused", "level_complete"):
             self._drawWorld()
             if self.state == "paused":
