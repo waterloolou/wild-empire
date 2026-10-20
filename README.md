@@ -1,6 +1,10 @@
 # WILD EMPIRE — Sewer Society Liberation Campaign
 ### PyGame Platformer Starter — Full Architecture
 
+## ▶ [Play in your browser](https://waterloolou.github.io/wild-empire/)
+
+No install needed. Click the game once to give it keyboard focus (and sound). The web version is built automatically from this repo with [pygbag](https://pygame-web.github.io/) on every push.
+
 ---
 
 ## Setup

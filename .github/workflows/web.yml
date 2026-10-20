@@ -1,0 +1,42 @@
+name: Build web version (pygbag) and publish to GitHub Pages
+
+# Turns the PyGame game into a browser build with pygbag and pushes it to the
+# gh-pages branch, which GitHub Pages serves at https://waterloolou.github.io/<repo>/
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build with pygbag
+        run: |
+          pip install pygbag==0.9.3
+          python -m pygbag --build --title "Wild Empire" .
+          touch build/web/.nojekyll
+
+      - name: Publish to gh-pages
+        run: |
+          cd build/web
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "Web build of ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

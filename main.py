@@ -7,6 +7,7 @@
 # Deps:  pip install pygame
 # ============================================================
 
+import asyncio
 import pygame
 import sys
 import random
@@ -453,15 +454,15 @@ def drawTitleScreen(screen, font, smallFont):
     screen.fill(DARK)
     title = font.render("WILD EMPIRE", True, (0, 220, 120))
     sub   = smallFont.render("Sewer Society Liberation Campaign", True, (160, 220, 160))
-    start = smallFont.render("Press ENTER to begin   |   ESC to quit", True, GRAY)
+    start = smallFont.render("Press ENTER to begin" + ("" if sys.platform == "emscripten" else "   |   ESC to quit"), True, GRAY)
     w = SCREEN_W
     screen.blit(title, (w//2 - title.get_width()//2, 200))
     screen.blit(sub,   (w//2 - sub.get_width()//2,   280))
     screen.blit(start, (w//2 - start.get_width()//2, 420))
 
     controls = [
-        "A/D  or  ←/→ : Move",
-        "W / SPACE / ↑ : Jump",
+        "A/D or Arrows : Move",
+        "W / SPACE / Up : Jump",
         "G              : Shoot",
         "F              : Melee",
         "Q              : Skill Shield",
@@ -479,7 +480,7 @@ def drawGunSelect(screen, font, smallFont, selectedIdx):
     screen.fill(DARK)
     title = font.render("CHOOSE YOUR WEAPON", True, (255, 220, 0))
     screen.blit(title, (SCREEN_W//2 - title.get_width()//2, 120))
-    sub = smallFont.render("← / → to navigate   |   ENTER to confirm", True, GRAY)
+    sub = smallFont.render("Left / Right to navigate   |   ENTER to confirm", True, GRAY)
     screen.blit(sub, (SCREEN_W//2 - sub.get_width()//2, 172))
 
     guns = [
@@ -604,7 +605,10 @@ class SoundManager:
         if not pygame.mixer.get_init():
             return
         for name in self._NAMES:
-            path = os.path.join(sounds_dir, f"{name}.wav")
+            # .ogg first: browsers (pygbag build) can't decode every .wav reliably.
+            path = os.path.join(sounds_dir, f"{name}.ogg")
+            if not os.path.exists(path):
+                path = os.path.join(sounds_dir, f"{name}.wav")
             if os.path.exists(path):
                 try:
                     self._sounds[name] = pygame.mixer.Sound(path)
@@ -649,6 +653,12 @@ def cameraOffset(player, levelW, levelH):
     cx = max(0, min(cx, levelW - SCREEN_W))
     cy = max(0, min(cy, levelH - SCREEN_H))
     return (cx, cy)
+
+
+def quitGame():
+    if sys.platform == "emscripten":
+        return  # closing the tab is the only way to quit on the web
+    pygame.quit(); sys.exit()
 
 
 # ============================================================
@@ -791,18 +801,21 @@ class Game:
         return False
 
     # -------------------------------------------------------
-    def run(self):
+    async def run(self):
+        # async + asyncio.sleep(0) lets the same loop run in the browser (pygbag),
+        # which needs to hand control back to the page every frame.
         while True:
             self.handleEvents()
             self.update()
             self.render()
             self.clock.tick(FPS)
+            await asyncio.sleep(0)
 
     # -------------------------------------------------------
     def handleEvents(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
+                quitGame()
 
             if event.type == pygame.KEYDOWN:
                 if event.key in (pygame.K_w, pygame.K_SPACE, pygame.K_UP):
@@ -813,7 +826,7 @@ class Game:
                     if self.state == "playing":
                         self.state = "title"
                     else:
-                        pygame.quit(); sys.exit()
+                        quitGame()
 
                 elif event.key == pygame.K_p and self.state == "playing":
                     self.state = "paused"
@@ -1195,4 +1208,4 @@ class Game:
 # ENTRY POINT
 # ============================================================
 if __name__ == "__main__":
-    Game().run()
+    asyncio.run(Game().run())
